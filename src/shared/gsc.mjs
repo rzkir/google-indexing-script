@@ -102,13 +102,28 @@ export async function requestIndexing(accessToken, url) {
   });
 
   if (response.status === 403) {
-    console.error(`🔐 This service account doesn't have access to this site.`);
+    const errorText = await response.text();
+    let errorJson;
+    try {
+      errorJson = JSON.parse(errorText);
+    } catch (e) {
+      errorJson = null;
+    }
+
+    if (errorJson?.error?.message?.includes("verify the URL ownership")) {
+      console.error(`🔐 Permission denied. Failed to verify URL ownership for this URL.`);
+      console.error(`   Make sure this URL is verified in Google Search Console.`);
+    } else {
+      console.error(`🔐 This service account doesn't have access to this site.`);
+    }
     console.error(`Response was: ${response.status}`);
   }
 
-  if (response.status >= 300) {
+  if (response.status >= 300 && response.status !== 403) {
     console.error(`❌ Failed to request indexing.`);
     console.error(`Response was: ${response.status}`);
     console.error(await response.text());
   }
+
+  return response.status;
 }

@@ -6,7 +6,7 @@ import {
   getEmojiForStatus,
   getPageIndexingStatus,
 } from "./shared/gsc.mjs";
-import { getSitemapPages } from "./shared/sitemap.mjs";
+import { getSitemapPages, listAvailableSites } from "./shared/sitemap.mjs";
 import { batch } from "./shared/utils.mjs";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 
@@ -28,6 +28,24 @@ const [sitemaps, pages] = await getSitemapPages(accessToken, siteUrl);
 
 if (sitemaps.length === 0) {
   console.error("❌ No sitemaps found, add them to Google Search Console and try again.");
+  console.error("");
+  console.log("📋 Checking available sites for this service account...");
+  const availableSites = await listAvailableSites(accessToken);
+  if (availableSites.length > 0) {
+    console.log("✅ Sites accessible by this service account:");
+    availableSites.forEach((site) => {
+      console.log(`   • ${site.siteUrl} (permission: ${site.permissionLevel})`);
+    });
+    console.log("");
+    console.log(`💡 Make sure you're using the exact site URL format from the list above.`);
+    console.log(`   You tried: ${siteUrl}`);
+    const matchingSite = availableSites.find((s) => s.siteUrl === siteUrl);
+    if (!matchingSite) {
+      console.log(`   ⚠️  This site URL is not in the list above.`);
+    }
+  } else {
+    console.log("❌ No sites found. Make sure the service account has been added as Owner in Google Search Console.");
+  }
   console.error("");
   process.exit(1);
 }
@@ -91,17 +109,37 @@ if (indexablePages.length === 0) {
 }
 console.log(``);
 
+let successCount = 0;
+let alreadyRequestedCount = 0;
+let failedCount = 0;
+
 for (const url of indexablePages) {
   console.log(`📄 Processing url: ${url}`);
   const status = await getPublishMetadata(accessToken, url);
   if (status === 404) {
-    await requestIndexing(accessToken, url);
-    console.log("🚀 Indexing requested successfully. It may take a few days for Google to process it.");
+    const indexingStatus = await requestIndexing(accessToken, url);
+    if (indexingStatus === 200) {
+      console.log("🚀 Indexing requested successfully. It may take a few days for Google to process it.");
+      successCount++;
+    } else {
+      failedCount++;
+    }
   } else if (status < 400) {
     console.log(`🕛 Indexing already requested previously. It may take a few days for Google to process it.`);
+    alreadyRequestedCount++;
+  } else if (status === 403) {
+    failedCount++;
+  } else {
+    failedCount++;
   }
   console.log(``);
 }
+
+console.log(`📊 Summary:`);
+console.log(`   ✅ Successfully requested indexing: ${successCount} URLs`);
+console.log(`   ⏳ Already requested previously: ${alreadyRequestedCount} URLs`);
+console.log(`   ❌ Failed: ${failedCount} URLs`);
+console.log(``);
 
 console.log(`👍 All done!`);
 console.log(`💖 Brought to you by https://seogets.com - SEO Analytics.`);
